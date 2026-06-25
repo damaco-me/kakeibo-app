@@ -370,13 +370,13 @@
       <h1>💰 家計簿</h1>
       <button class="btn-csv" onclick="downloadCSV()">📥 CSV</button>
     </div>
-
+ 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('record', this)">記録</button>
       <button class="tab" onclick="switchTab('list', this)">一覧</button>
       <button class="tab" onclick="switchTab('summary', this)">集計</button>
     </div>
-
+ 
     <div class="tab-content active" id="tab-record">
       <div class="card">
         <label class="label">📊 記録タイプ</label>
@@ -385,7 +385,7 @@
           <button class="btn-type" id="btn-income" onclick="switchType('income', this)">収入</button>
         </div>
       </div>
-
+ 
       <div id="section-expense" class="card">
         <label class="label">📸 レシートを読み取る</label>
         <div class="upload-area" onclick="document.getElementById('file-input').click()">
@@ -396,7 +396,7 @@
         <div class="status" id="ai-status"></div>
         <div id="ai-items-container"></div>
       </div>
-
+ 
       <div class="card">
         <label class="label">✏️ 手入力・修正</label>
         <input type="text" id="item-name" placeholder="品目名">
@@ -455,7 +455,7 @@
         <button class="btn-primary" onclick="addRecord()">記録する</button>
       </div>
     </div>
-
+ 
     <div class="tab-content" id="tab-list">
       <div style="margin-bottom: 8px;">
         <select id="filter-kubun" class="filter-select" onchange="renderList()">
@@ -472,32 +472,32 @@
         <div class="empty">まだ記録がありません</div>
       </div>
     </div>
-
+ 
     <div class="tab-content" id="tab-summary">
       <div id="summary-container"></div>
     </div>
   </div>
-
+ 
   <div class="toast" id="toast"></div>
-
+ 
   <script>
     const records = [];
     let pendingAIItems = [];
     let currentType = 'expense';
-
+ 
     // 前月の残高
     const previousBalance = {
       妻: -17196,
       夫: 248613
     };
-
+ 
     function toast(msg) {
       const t = document.getElementById('toast');
       t.textContent = msg;
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 2000);
     }
-
+ 
     function switchTab(name, el) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -506,7 +506,7 @@
       if (name === 'list') renderList();
       if (name === 'summary') renderSummary();
     }
-
+ 
     function switchType(type, el) {
       currentType = type;
       document.querySelectorAll('.btn-type').forEach(b => b.classList.remove('active'));
@@ -524,7 +524,7 @@
         updateCategoryOptions('income');
       }
     }
-
+ 
     function updateCategoryOptions(type) {
       const catSelect = document.getElementById('item-cat');
       if (type === 'expense') {
@@ -560,7 +560,7 @@
         `;
       }
     }
-
+ 
     function setToday() {
       const now = new Date();
       const y = now.getFullYear();
@@ -569,7 +569,8 @@
       document.getElementById('item-date').value = y + '-' + m + '-' + d;
     }
     setToday();
-
+ 
+    // 【修正点】バックエンド API を使用
     async function handleImage(input) {
       if (!input.files || !input.files[0]) return;
       if (currentType !== 'expense') {
@@ -582,7 +583,7 @@
       status.textContent = 'AIが読み取り中...';
       status.className = 'status show';
       container.innerHTML = '';
-
+ 
       const file = input.files[0];
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader();
@@ -590,35 +591,25 @@
         r.onerror = () => rej(new Error('Read failed'));
         r.readAsDataURL(file);
       });
-
+ 
       try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        // バックエンド API へ呼び出し
+        const resp = await fetch('/api/receiptAnalysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
-                { type: 'text', text: 'このレシートを読み取り、JSON形式のみで返してください。前置きや説明文やバッククォートは不要です。\n{"shop":"店名","date":"YYYY-MM-DD","items":[{"name":"品目","amount":金額(数値),"category":"カテゴリ"}]}\nカテゴリ候補：①食材、②嗜好品（菓子）、②嗜好品（酒）、③日用品、④書籍・教育、⑤衣類・美容、⑥-A子ども関連（単発）、⑥-B子ども定期課金、⑦-A体験・宿泊、⑦-Bお土産（食品）、⑦-Cお土産（グッズ）、⑧サブスク・デジタル、⑨住まい・家具、⑩-A外食（日常）、⑩-B外食（お出かけ）、⑪交通費、⑫贈答品・お祝い、⑬光熱費・通信、⑭医療費、⑮車・自動車関連、⑯特別費・家計運営コスト\n酒類（ビール等）は②嗜好品（酒）、お菓子類は②嗜好品（菓子）に分類。レジ袋は③日用品。' }
-              ]
-            }]
+            imageBase64: base64
           })
         });
-
+ 
         if (!resp.ok) throw new Error('API error: ' + resp.status);
         const data = await resp.json();
-        const text = data.content.filter(c => c.type === 'text').map(c => c.text).join('');
-        const clean = text.replace(/```json|```/g, '').trim();
-        const parsed = JSON.parse(clean);
-
-        status.textContent = parsed.items.length + '品目を検出しました';
-        pendingAIItems = parsed.items.map(item => ({
+ 
+        status.textContent = data.items.length + '品目を検出しました';
+        pendingAIItems = data.items.map(item => ({
           ...item,
-          shop: parsed.shop,
-          date: parsed.date,
+          shop: data.shop,
+          date: data.date,
           type: 'expense'
         }));
         renderAIItems();
@@ -628,7 +619,7 @@
       }
       input.value = '';
     }
-
+ 
     function renderAIItems() {
       const container = document.getElementById('ai-items-container');
       if (pendingAIItems.length === 0) {
@@ -647,7 +638,7 @@
         </div>
       `).join('') + '<button class="btn-primary" onclick="addAllAI()" style="margin-top: 8px;">全て記録</button></div>';
     }
-
+ 
     function fillFromAI(idx) {
       const item = pendingAIItems[idx];
       document.getElementById('item-name').value = item.name || '';
@@ -663,7 +654,7 @@
       }
       window.scrollTo({ top: 200, behavior: 'smooth' });
     }
-
+ 
     function quickAdd(idx) {
       const item = pendingAIItems[idx];
       records.unshift({
@@ -680,7 +671,7 @@
       renderAIItems();
       toast(item.name + ' を記録');
     }
-
+ 
     function addAllAI() {
       pendingAIItems.forEach((item, i) => {
         records.unshift({
@@ -699,7 +690,7 @@
       renderAIItems();
       document.getElementById('ai-status').className = 'status';
     }
-
+ 
     function addRecord() {
       const name = document.getElementById('item-name').value.trim();
       const amount = parseInt(document.getElementById('item-amount').value);
@@ -722,7 +713,7 @@
       document.getElementById('item-shop').value = '';
       toast(name + ' を記録');
     }
-
+ 
     function renderList() {
       const filter = document.getElementById('filter-kubun').value;
       const filtered = filter ? records.filter(r => r.kubun === filter) : records;
@@ -745,7 +736,7 @@
         </div>
       `).join('') + '</div>';
     }
-
+ 
     function deleteRecord(idx) {
       const r = records[idx];
       if (confirm(r.name + ' を削除しますか？')) {
@@ -754,11 +745,11 @@
         toast('削除');
       }
     }
-
+ 
     function renderSummary() {
       const expenses = records.filter(r => r.type === 'expense');
       const incomes = records.filter(r => r.type === 'income');
-
+ 
       // 家計
       const kakeiboExp = expenses.filter(r => r.kubun === '家計');
       const kakeiboExpTotal = kakeiboExp.reduce((s, r) => s + r.amount, 0);
@@ -767,11 +758,11 @@
         catTotals[r.category] = (catTotals[r.category] || 0) + r.amount;
       });
       const sortedCats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
-
+ 
       // 個人費
       const kojinhiWife = expenses.filter(r => r.kubun === '個人費（妻）').reduce((s, r) => s + r.amount, 0);
       const kojinhiHusb = expenses.filter(r => r.kubun === '個人費（夫）').reduce((s, r) => s + r.amount, 0);
-
+ 
       // お小遣い
       const kozukaiWifeExp = expenses.filter(r => r.kubun === 'お小遣い（妻）').reduce((s, r) => s + r.amount, 0);
       const kozukaiHusbExp = expenses.filter(r => r.kubun === 'お小遣い（夫）').reduce((s, r) => s + r.amount, 0);
@@ -779,7 +770,7 @@
       const kozukaiHusbInc = incomes.filter(r => r.kubun === 'お小遣い（夫）').reduce((s, r) => s + r.amount, 0);
       const kozukaiWifeBalance = previousBalance.妻 + kozukaiWifeInc - kozukaiWifeExp;
       const kozukaiHusbBalance = previousBalance.夫 + kozukaiHusbInc - kozukaiHusbExp;
-
+ 
       let html = '<div class="summary-section">';
       html += '<div class="section-title">▼ 家計</div>';
       
@@ -803,14 +794,14 @@
       
       html += '<div style="padding-top: 12px; margin-top: 12px; border-top: 1px solid #e0e0e0; text-align: right; font-weight: 600;">合計: ¥' + kakeiboExpTotal.toLocaleString() + '</div>';
       html += '</div>';
-
+ 
       // 個人費
       html += '<div class="summary-section">';
       html += '<div class="section-title">▼ 個人費</div>';
       html += '<div class="metric"><div class="metric-label">妻</div><div class="metric-value">¥' + kojinhiWife.toLocaleString() + '</div></div>';
       html += '<div class="metric"><div class="metric-label">夫</div><div class="metric-value">¥' + kojinhiHusb.toLocaleString() + '</div></div>';
       html += '</div>';
-
+ 
       // お小遣い
       html += '<div class="summary-section">';
       html += '<div class="section-title">▼ お小遣い</div>';
@@ -824,7 +815,7 @@
       html += '<div class="metric-value" style="color: ' + (kozukaiWifeBalance >= 0 ? '#2e7d32' : '#d00') + '">¥' + kozukaiWifeBalance.toLocaleString() + '</div>';
       html += '<div style="font-size: 11px; color: #666; margin-top: 4px;">月末残高</div>';
       html += '</div>';
-
+ 
       html += '<div class="metric">';
       html += '<div class="metric-label">夫</div>';
       html += '<div style="font-size: 12px; color: #666; margin-bottom: 8px;">';
@@ -836,10 +827,10 @@
       html += '<div style="font-size: 11px; color: #666; margin-top: 4px;">月末残高</div>';
       html += '</div>';
       html += '</div>';
-
+ 
       document.getElementById('summary-container').innerHTML = html;
     }
-
+ 
     function downloadCSV() {
       if (records.length === 0) {
         toast('記録がありません');
@@ -859,3 +850,8 @@
   </script>
 </body>
 </html>
+ 
+
+
+
+
